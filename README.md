@@ -21,3 +21,7 @@ make run        # build and open the macOS app
 
 Local setup: check out `MawaKit` next to this repository (`~/dev/MawaKit` and `~/dev/SalatWidget`) and install Rust
 with `rustup`.
+
+## License
+
+[MIT](LICENSE). Prayer times are provided by MAWAQIT; this project isn't affiliated with MAWAQIT.
