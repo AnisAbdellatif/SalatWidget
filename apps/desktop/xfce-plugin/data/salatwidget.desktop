@@ -1,0 +1,10 @@
+[Xfce Panel]
+Type=X-XFCE-PanelPlugin
+Encoding=UTF-8
+Name=SalatWidget
+Comment=Time left until the next prayer at your mosque
+Icon=appointment-soon
+X-XFCE-Module=salatwidget
+X-XFCE-Internal=false
+X-XFCE-Unique=true
+X-XFCE-API=2.0

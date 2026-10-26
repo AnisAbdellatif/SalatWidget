@@ -5,6 +5,10 @@
 #   scripts/vm.sh build       sync, then cargo build on the VM
 #   scripts/vm.sh run         sync, build, and (re)start the app in the VM's desktop session
 #   scripts/vm.sh stop        stop the app
+#   scripts/vm.sh plugin      sync, build and install the XFCE panel plugin in the VM user's
+#                             home folder (the panel finds the .desktop file under
+#                             ~/.local/share and the library under ~/.local/lib/<multiarch>),
+#                             restart the panel, add the plugin if missing
 #   scripts/vm.sh log         show the app's output
 #   scripts/vm.sh shot [out]  screenshot of the VM screen, copied here (default: ./vm-shot.png)
 #   scripts/vm.sh ssh <cmd>   run a command on the VM with the desktop environment set
@@ -52,6 +56,18 @@ case "${1:-}" in
         remote "cd $REMOTE_DIR/SalatWidget/apps/desktop || exit 1; setsid nohup target/debug/salatwidget ${APP_ARGS:-} >\$HOME/salatwidget.log 2>&1 < /dev/null & sleep 2; cat \$HOME/salatwidget.log"
         ;;
     stop) stop ;;
+    plugin)
+        sync
+        remote "cd $REMOTE_DIR/SalatWidget/apps/desktop && cargo build --quiet -p salatwidget-xfce ${CARGO_FLAGS:-} \
+            && data=\$HOME/.local/share/xfce4/panel/plugins \
+            && lib=\$HOME/.local/lib/\$(gcc -dumpmachine)/xfce4/panel/plugins \
+            && mkdir -p \$data \$lib \
+            && cp target/debug/libsalatwidget_xfce.so \$lib/libsalatwidget.so \
+            && cp xfce-plugin/data/salatwidget.desktop \$data/ \
+            && (xfce4-panel -r >/dev/null 2>&1 &) && sleep 3 \
+            && { xfconf-query -c xfce4-panel -p /plugins -lv | grep -q ' salatwidget\$' || (xfce4-panel --add=salatwidget &); } \
+            && echo installed: \$lib/libsalatwidget.so"
+        ;;
     log) remote "cat \$HOME/salatwidget.log" ;;
     shot)
         out="${2:-$PWD/vm-shot.png}"

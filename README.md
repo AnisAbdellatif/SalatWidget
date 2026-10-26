@@ -5,8 +5,8 @@ Prayer-time widgets for the desktop: the next prayer and a countdown in the menu
 | App | Folder | Status |
 | --- | --- | --- |
 | macOS menu bar | [`apps/macos`](apps/macos) | Working (SwiftUI) |
-| Windows tray | `apps/desktop` | Planned: one Rust tray app for Windows and Linux |
-| Linux tray / top bar | `apps/desktop` | Planned |
+| Linux: XFCE panel plugin and tray app | [`apps/desktop`](apps/desktop) | Working (Rust, GTK 3) |
+| Windows tray | `apps/desktop` | Planned, sharing the Linux app's code |
 
 All apps use [MawaKit](../MawaKit), the shared prayer-time core written in Rust. It lives in its own repository so
 other apps can use it too. MawaKit owns the behaviour, verified by its shared spec. The apps here own everything

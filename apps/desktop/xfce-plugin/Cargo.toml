@@ -4,9 +4,21 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 publish = false
+description = "SalatWidget as a native XFCE panel plugin: the countdown as real text in the panel."
 
 [lib]
+# Loaded by the XFCE panel as libsalatwidget.so (see scripts/vm.sh plugin / README).
 crate-type = ["cdylib"]
 
 [dependencies]
 salatwidget = { path = ".." }
+gtk = "0.18"
+
+[build-dependencies]
+cc = "1.10.0"
+pkg-config = "0.3.34"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"

@@ -110,6 +110,12 @@ struct Inner {
 #[derive(Clone)]
 pub struct Panel(Rc<Inner>);
 
+impl Default for Panel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Panel {
     pub fn new() -> Self {
         let window = gtk::Window::new(gtk::WindowType::Toplevel);
