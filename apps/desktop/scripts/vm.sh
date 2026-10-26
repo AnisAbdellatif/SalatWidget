@@ -42,6 +42,20 @@ build() {
     remote "cd $REMOTE_DIR/SalatWidget/apps/desktop && cargo build --quiet ${CARGO_FLAGS:-}"
 }
 
+# Restarts the XFCE panel inside the desktop session. `xfce4-panel -r` relies on the
+# session manager relaunching the panel, which doesn't always happen; so quit it and
+# start it again with the session's SESSION_MANAGER, then check it's back.
+RESTART_PANEL='restart_panel() {
+    local sm="" p
+    for p in $(pgrep -u "$(id -u)"); do
+        sm=$(tr "\000" "\n" < /proc/$p/environ 2>/dev/null | grep "^SESSION_MANAGER=") && break
+    done
+    xfce4-panel --quit >/dev/null 2>&1; sleep 1
+    env ${sm:+"$sm"} setsid nohup xfce4-panel >/dev/null 2>&1 < /dev/null &
+    sleep 4
+    pgrep -x xfce4-panel >/dev/null || { echo "panel did not restart" >&2; return 1; }
+}'
+
 stop() {
     remote "pkill -x salatwidget || true"
 }
@@ -58,13 +72,13 @@ case "${1:-}" in
     stop) stop ;;
     plugin)
         sync
-        remote "cd $REMOTE_DIR/SalatWidget/apps/desktop && cargo build --quiet -p salatwidget-xfce ${CARGO_FLAGS:-} \
+        remote "$RESTART_PANEL; cd $REMOTE_DIR/SalatWidget/apps/desktop && cargo build --quiet -p salatwidget-xfce ${CARGO_FLAGS:-} \
             && data=\$HOME/.local/share/xfce4/panel/plugins \
             && lib=\$HOME/.local/lib/\$(gcc -dumpmachine)/xfce4/panel/plugins \
             && mkdir -p \$data \$lib \
             && cp target/debug/libsalatwidget_xfce.so \$lib/libsalatwidget.so \
             && cp xfce-plugin/data/salatwidget.desktop \$data/ \
-            && (xfce4-panel -r >/dev/null 2>&1 &) && sleep 3 \
+            && restart_panel \
             && { xfconf-query -c xfce4-panel -p /plugins -lv | grep -q ' salatwidget\$' || (xfce4-panel --add=salatwidget &); } \
             && echo installed: \$lib/libsalatwidget.so"
         ;;

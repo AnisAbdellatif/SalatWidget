@@ -2,6 +2,7 @@
 //! loading timetables, choosing a mosque and the GTK popup. What sits in the panel
 //! (a tray icon with a menu, or a text label) is an [`Indicator`].
 
+mod notify;
 pub mod panel;
 mod tray;
 
@@ -13,7 +14,7 @@ use gtk::glib;
 use jiff::Timestamp;
 use mawakit::{MosqueTimetable, countdown, mawaqit};
 
-use crate::store::{Cached, Settings};
+use crate::store::{Cached, Settings, autostart};
 use crate::view::{self, Row};
 
 use panel::Panel;
@@ -64,6 +65,10 @@ pub struct App {
     can_quit: bool,
     /// Incremented whenever ticks are rescheduled; stale timers check it and stop.
     tick_generation: u64,
+    /// Events up to this moment have been considered for notifications.
+    notified_until: Timestamp,
+    /// Held while this process is the notification sender (see `notify::claim_sender`).
+    sender_lock: Option<std::fs::File>,
 }
 
 thread_local! {
@@ -85,18 +90,33 @@ pub fn run(
     mosque_argument: Option<String>,
     open_panel: bool,
     close_panel_after: Option<u64>,
+    notify_test: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     gtk::init()?;
     if let Some(input) = mosque_argument {
         let slug =
             mawaqit::mosque_slug(&input).ok_or("that doesn't look like a Mawaqit mosque link")?;
-        Settings { mosque: Some(slug) }.save()?;
+        let mut settings = Settings::load();
+        settings.mosque = Some(slug);
+        settings.save()?;
     }
 
     let app = start(Box::new(Tray::new()?), true);
     tray::install_menu_handler();
     if open_panel {
         show_panel(&app);
+    }
+    if notify_test {
+        let timetable = app.borrow().timetable.clone();
+        let next = timetable.as_ref().and_then(|t| {
+            let kinds = vec![mawakit::PrayerEventKind::Adhan];
+            t.events_after(Timestamp::now(), 1, kinds)
+                .into_iter()
+                .next()
+        });
+        if let (Some(t), Some(event)) = (timetable, next) {
+            notify::send(&view::notice(&event, t.time_zone()));
+        }
     }
     if let Some(seconds) = close_panel_after {
         // Debug builds: lets a script measure the app after the popup closes.
@@ -129,6 +149,8 @@ pub fn start(indicator: Box<dyn Indicator>, can_quit: bool) -> Rc<RefCell<App>> 
         panel: None,
         can_quit,
         tick_generation: 0,
+        notified_until: Timestamp::now(),
+        sender_lock: None,
     }));
     APP.with(|cell| *cell.borrow_mut() = Some(app.clone()));
 
@@ -169,6 +191,23 @@ fn reschedule(app: &Rc<RefCell<App>>) {
             let schedule = t.displayed_schedule(now)?;
             Some(view::rows(&schedule, status.as_ref(), now, t.time_zone()))
         });
+        // Notify about adhans/iqamas reached since the last tick. Ticks land right on
+        // them, because every adhan and iqama is a timetable boundary.
+        // The switches are re-read from disk, since the tray app and the panel plugin
+        // share them; only one of the two (whoever holds the lock) sends.
+        if let Some(t) = &timetable {
+            let kinds = Settings::load().notification_kinds();
+            if !kinds.is_empty() && state.sender_lock.is_none() {
+                state.sender_lock = notify::claim_sender();
+            }
+            if state.sender_lock.is_some() {
+                for event in view::due_events(t, state.notified_until, now, &kinds) {
+                    notify::send(&view::notice(&event, t.time_zone()));
+                }
+            }
+        }
+        state.notified_until = now;
+
         let needs_mosque = state.settings.mosque.is_none();
         state.indicator.show(IndicatorState {
             status: status.as_ref(),
@@ -287,6 +326,27 @@ fn load(app: &Rc<RefCell<App>>, slug: String, select: bool) {
     });
 }
 
+/// Turns adhan and/or iqama notifications on or off.
+fn set_notifications(app: &Rc<RefCell<App>>, adhan: Option<bool>, iqama: Option<bool>) {
+    let mut state = app.borrow_mut();
+    if let Some(on) = adhan {
+        state.settings.notify_adhan = on;
+    }
+    if let Some(on) = iqama {
+        state.settings.notify_iqama = on;
+    }
+    // Only events from now on: switching on doesn't replay earlier ones.
+    state.notified_until = Timestamp::now();
+    if let Err(error) = state.settings.save() {
+        eprintln!("salatwidget: couldn't save settings: {error}");
+    }
+}
+
+/// Adds or removes the login item (tray app only).
+fn set_autostart(enabled: bool) -> Result<(), String> {
+    autostart::set_enabled(enabled).map_err(|e| format!("Couldn't update the login item: {e}"))
+}
+
 /// Switches to the mosque in `input` (a Mawaqit link or slug).
 fn select_mosque(app: &Rc<RefCell<App>>, input: &str) -> Result<(), String> {
     let slug =
@@ -302,6 +362,11 @@ fn with_panel(app: &Rc<RefCell<App>>, f: impl FnOnce(&Panel)) {
     if let Some(panel) = panel {
         f(&panel);
     }
+}
+
+fn show_settings(app: &Rc<RefCell<App>>) {
+    show_panel(app);
+    with_panel(app, Panel::show_settings);
 }
 
 fn show_panel(app: &Rc<RefCell<App>>) {
@@ -330,6 +395,10 @@ fn update_panel(app: &Rc<RefCell<App>>) {
             has_mosque: state.settings.mosque.is_some(),
             slug: state.settings.mosque.clone(),
             can_quit: state.can_quit,
+            notify_adhan: state.settings.notify_adhan,
+            notify_iqama: state.settings.notify_iqama,
+            // The panel plugin starts with the panel, so only the tray app has a login item.
+            autostart: state.can_quit.then(autostart::is_enabled),
         }
     };
     with_panel(app, |panel| panel.update(snapshot));

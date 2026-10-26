@@ -24,6 +24,7 @@ pub struct Tray {
 pub mod ids {
     pub const OPEN: &str = "open";
     pub const REFRESH: &str = "refresh";
+    pub const SETTINGS: &str = "settings";
     pub const QUIT: &str = "quit";
 }
 
@@ -53,6 +54,7 @@ impl Tray {
             true,
             None,
         ))?;
+        menu.append(&MenuItem::with_id(ids::SETTINGS, "Settings…", true, None))?;
         menu.append(&PredefinedMenuItem::separator())?;
         menu.append(&MenuItem::with_id(ids::QUIT, "Quit", true, None))?;
 
@@ -161,6 +163,7 @@ pub fn install_menu_handler() {
         match id.0.as_str() {
             ids::OPEN => super::with_app(super::show_panel),
             ids::REFRESH => super::with_app(super::refresh),
+            ids::SETTINGS => super::with_app(super::show_settings),
             ids::QUIT => super::quit(),
             _ => {}
         }

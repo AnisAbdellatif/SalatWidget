@@ -3,7 +3,10 @@
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
-use mawakit::{DaySchedule, MosqueTimetable, PrayerPhase, PrayerStatus, PrayerTime, countdown};
+use mawakit::{
+    DaySchedule, MosqueTimetable, PrayerEvent, PrayerEventKind, PrayerPhase, PrayerStatus,
+    PrayerTime, countdown,
+};
 
 use crate::icon::Tone;
 
@@ -184,6 +187,58 @@ pub fn card(status: &PrayerStatus, now: Timestamp, timetable: &MosqueTimetable) 
     }
 }
 
+/// Events further in the past than this are dropped rather than notified, so waking
+/// the computer after hours of suspend doesn't fire a burst of stale alerts.
+pub const NOTIFY_GRACE_SECONDS: i64 = 5 * 60;
+
+/// The adhan/iqama events of `kinds` that became due in (`since`, `now`], minus those
+/// more than [`NOTIFY_GRACE_SECONDS`] late.
+pub fn due_events(
+    timetable: &MosqueTimetable,
+    since: Timestamp,
+    now: Timestamp,
+    kinds: &[PrayerEventKind],
+) -> Vec<PrayerEvent> {
+    if now <= since || kinds.is_empty() {
+        return Vec::new();
+    }
+    let grace_start = now
+        .checked_sub(jiff::SignedDuration::from_secs(NOTIFY_GRACE_SECONDS))
+        .unwrap_or(now);
+    timetable
+        .events_after(since.max(grace_start), 1, kinds.to_vec())
+        .into_iter()
+        .filter(|event| event.date <= now)
+        .collect()
+}
+
+/// A desktop notification's title and text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Notice {
+    pub summary: String,
+    pub body: String,
+}
+
+/// `Asr · العصر` / `It's time for Asr. Iqama at 15:51.`, or `Iqama · Asr` /
+/// `The prayer is starting now.`
+pub fn notice(event: &PrayerEvent, tz: &TimeZone) -> Notice {
+    let prayer = &event.prayer;
+    let name = prayer.display_name();
+    match event.kind {
+        PrayerEventKind::Adhan => Notice {
+            summary: format!("{name} · {}", prayer.display_arabic_name()),
+            body: match prayer.iqama {
+                Some(iqama) => format!("It's time for {name}. Iqama at {}.", clock_time(iqama, tz)),
+                None => format!("It's time for {name}."),
+            },
+        },
+        PrayerEventKind::Iqama => Notice {
+            summary: format!("Iqama · {name}"),
+            body: "The prayer is starting now.".to_owned(),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,6 +358,93 @@ mod tests {
         assert_eq!(
             date_line(shown.day, now, t.time_zone()),
             "Tomorrow, Sat, 24 Oct"
+        );
+    }
+
+    #[test]
+    fn notifies_events_that_just_became_due() {
+        let t = timetable();
+        let both = [PrayerEventKind::Adhan, PrayerEventKind::Iqama];
+        // Asr: adhan 15:41, iqama 15:51 (13:41 / 13:51 UTC).
+        let due = due_events(
+            &t,
+            ts("2026-10-23T13:40:00Z"),
+            ts("2026-10-23T13:41:00Z"),
+            &both,
+        );
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].kind, PrayerEventKind::Adhan);
+        assert_eq!(due[0].prayer.display_name(), "Asr");
+
+        // Nothing new between two ticks without an event.
+        assert!(
+            due_events(
+                &t,
+                ts("2026-10-23T13:41:00Z"),
+                ts("2026-10-23T13:45:00Z"),
+                &both
+            )
+            .is_empty()
+        );
+
+        // Only the kinds asked for.
+        let iqama_only = due_events(
+            &t,
+            ts("2026-10-23T13:40:00Z"),
+            ts("2026-10-23T13:52:00Z"),
+            &[PrayerEventKind::Iqama],
+        );
+        assert_eq!(
+            iqama_only.iter().map(|e| e.kind).collect::<Vec<_>>(),
+            vec![PrayerEventKind::Iqama]
+        );
+        assert!(
+            due_events(
+                &t,
+                ts("2026-10-23T13:40:00Z"),
+                ts("2026-10-23T13:52:00Z"),
+                &[]
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn drops_events_missed_long_ago() {
+        let t = timetable();
+        let both = [PrayerEventKind::Adhan, PrayerEventKind::Iqama];
+        // Waking at 15:54 after a suspend since the morning: only the Asr iqama (15:51) is
+        // recent enough; the Fajr, Jumu'a and Asr adhan alerts are dropped.
+        let due = due_events(
+            &t,
+            ts("2026-10-23T04:00:00Z"),
+            ts("2026-10-23T13:54:00Z"),
+            &both,
+        );
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].kind, PrayerEventKind::Iqama);
+    }
+
+    #[test]
+    fn notification_text() {
+        let t = timetable();
+        let events = t.events_after(
+            ts("2026-10-23T13:00:00Z"),
+            0,
+            vec![PrayerEventKind::Adhan, PrayerEventKind::Iqama],
+        );
+        let adhan = notice(&events[0], t.time_zone());
+        assert_eq!(adhan.summary, "Asr · العصر");
+        assert_eq!(adhan.body, "It's time for Asr. Iqama at 15:51.");
+        let iqama = notice(&events[1], t.time_zone());
+        assert_eq!(iqama.summary, "Iqama · Asr");
+        assert_eq!(iqama.body, "The prayer is starting now.");
+
+        // Jumu'a has no iqama time.
+        let friday = t.events_after(ts("2026-10-23T11:00:00Z"), 0, vec![PrayerEventKind::Adhan]);
+        assert_eq!(
+            notice(&friday[0], t.time_zone()).body,
+            "It's time for Jumu'a."
         );
     }
 }

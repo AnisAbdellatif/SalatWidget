@@ -67,6 +67,10 @@ pub struct Snapshot {
     pub has_mosque: bool,
     pub slug: Option<String>,
     pub can_quit: bool,
+    pub notify_adhan: bool,
+    pub notify_iqama: bool,
+    /// Whether the login item is on; `None` where it doesn't apply (the panel plugin).
+    pub autostart: Option<bool>,
 }
 
 struct RowWidgets {
@@ -98,6 +102,13 @@ struct Inner {
     picker_message: gtk::Label,
     picker_back: gtk::Button,
     picker_use: gtk::Button,
+    notify_adhan: gtk::Switch,
+    notify_iqama: gtk::Switch,
+    autostart: gtk::Switch,
+    autostart_section: gtk::Box,
+    settings_message: gtk::Label,
+    /// Set while switches are updated from app state, so that isn't taken as a click.
+    syncing: Cell<bool>,
     timetable: RefCell<Option<Rc<MosqueTimetable>>>,
     status: RefCell<Option<PrayerStatus>>,
     shown_day: Cell<Option<i64>>,
@@ -149,8 +160,10 @@ impl Panel {
         titles.pack_start(&date, false, false, 0);
         header.pack_start(&titles, true, true, 0);
         let change = icon_button("go-home-symbolic", "Change mosque");
+        let settings_button = icon_button("emblem-system-symbolic", "Settings");
         let close = icon_button("window-close-symbolic", "Close");
         header.pack_end(&close, false, false, 0);
+        header.pack_end(&settings_button, false, false, 0);
         header.pack_end(&change, false, false, 0);
         times.pack_start(&header, false, false, 0);
 
@@ -278,6 +291,51 @@ impl Panel {
         picker.pack_start(&picker_message, false, false, 0);
         stack.add_named(&picker, "mosque");
 
+        // ── Settings page ─────────────────────────────────────────────────────
+        let settings = gtk::Box::new(gtk::Orientation::Vertical, 10);
+        settings.style_context().add_class("salat-panel");
+        let settings_header = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let settings_back = icon_button("go-previous-symbolic", "Back");
+        settings_header.pack_start(&settings_back, false, false, 0);
+        settings_header.pack_start(&label("Settings", 0.0, &["salat-mosque"]), true, true, 0);
+        settings.pack_start(&settings_header, false, false, 0);
+
+        settings.pack_start(
+            &label("NOTIFICATIONS", 0.0, &["salat-heading", "salat-dim"]),
+            false,
+            false,
+            0,
+        );
+        let (adhan_row, notify_adhan) = switch_row("At adhan");
+        let (iqama_row, notify_iqama) = switch_row("At iqama");
+        settings.pack_start(&adhan_row, false, false, 0);
+        settings.pack_start(&iqama_row, false, false, 0);
+        let notify_note = label(
+            "Shown by your desktop's notification service, while SalatWidget is running.",
+            0.0,
+            &["salat-dim"],
+        );
+        notify_note.set_line_wrap(true);
+        notify_note.set_max_width_chars(40);
+        settings.pack_start(&notify_note, false, false, 0);
+
+        let autostart_section = gtk::Box::new(gtk::Orientation::Vertical, 10);
+        autostart_section.set_margin_top(6);
+        autostart_section.pack_start(
+            &label("GENERAL", 0.0, &["salat-heading", "salat-dim"]),
+            false,
+            false,
+            0,
+        );
+        let (autostart_row, autostart) = switch_row("Start at login");
+        autostart_section.pack_start(&autostart_row, false, false, 0);
+        settings.pack_start(&autostart_section, false, false, 0);
+        let settings_message = label("", 0.0, &["salat-error"]);
+        settings_message.set_line_wrap(true);
+        settings_message.set_max_width_chars(40);
+        settings.pack_start(&settings_message, false, false, 0);
+        stack.add_named(&settings, "settings");
+
         let panel = Panel(Rc::new(Inner {
             window,
             stack,
@@ -299,6 +357,12 @@ impl Panel {
             picker_message,
             picker_back,
             picker_use,
+            notify_adhan,
+            notify_iqama,
+            autostart,
+            autostart_section,
+            settings_message,
+            syncing: Cell::new(false),
             timetable: RefCell::new(None),
             status: RefCell::new(None),
             shown_day: Cell::new(None),
@@ -344,6 +408,44 @@ impl Panel {
             let panel = panel.clone();
             move |_| panel.show_picker(true)
         });
+        settings_button.connect_clicked({
+            let panel = panel.clone();
+            move |_| panel.show_settings()
+        });
+        settings_back.connect_clicked({
+            let panel = panel.clone();
+            move |_| panel.show_times()
+        });
+        for (switch, adhan) in [(&inner.notify_adhan, true), (&inner.notify_iqama, false)] {
+            let weak = Rc::downgrade(&panel.0);
+            switch.connect_active_notify(move |switch| {
+                let Some(inner) = weak.upgrade() else { return };
+                if inner.syncing.get() {
+                    return;
+                }
+                let on = Some(switch.is_active());
+                let (adhan_on, iqama_on) = if adhan { (on, None) } else { (None, on) };
+                super::with_app(|app| super::set_notifications(app, adhan_on, iqama_on));
+            });
+        }
+        {
+            let weak = Rc::downgrade(&panel.0);
+            inner.autostart.connect_active_notify(move |switch| {
+                let Some(inner) = weak.upgrade() else { return };
+                if inner.syncing.get() {
+                    return;
+                }
+                match super::set_autostart(switch.is_active()) {
+                    Ok(()) => inner.settings_message.set_text(""),
+                    Err(message) => {
+                        inner.settings_message.set_text(&message);
+                        inner.syncing.set(true);
+                        switch.set_active(!switch.is_active());
+                        inner.syncing.set(false);
+                    }
+                }
+            });
+        }
         refresh.connect_clicked(|_| super::with_app(super::refresh));
         quit.connect_clicked(|_| super::quit());
         web.connect_clicked({
@@ -416,6 +518,11 @@ impl Panel {
         self.0.window.is_visible()
     }
 
+    pub fn show_settings(&self) {
+        self.0.settings_message.set_text("");
+        self.0.stack.set_visible_child_name("settings");
+    }
+
     pub fn show_times(&self) {
         self.0.stack.set_visible_child_name("times");
     }
@@ -480,6 +587,19 @@ impl Panel {
         if !snapshot.has_mosque {
             inner.picker_back.set_visible(false);
         }
+        inner.syncing.set(true);
+        inner.notify_adhan.set_active(snapshot.notify_adhan);
+        inner.notify_iqama.set_active(snapshot.notify_iqama);
+        if let Some(on) = snapshot.autostart {
+            inner.autostart.set_active(on);
+        }
+        inner.syncing.set(false);
+        inner
+            .autostart_section
+            .set_visible(snapshot.autostart.is_some());
+        inner
+            .autostart_section
+            .set_no_show_all(snapshot.autostart.is_none());
         inner.quit.set_visible(snapshot.can_quit);
         inner.quit.set_no_show_all(!snapshot.can_quit);
         self.apply_visibility();
@@ -616,6 +736,16 @@ fn label(text: &str, xalign: f32, classes: &[&str]) -> gtk::Label {
         style.add_class(class);
     }
     label
+}
+
+/// A label on the left and a switch on the right.
+fn switch_row(text: &str) -> (gtk::Box, gtk::Switch) {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    row.pack_start(&label(text, 0.0, &[]), true, true, 0);
+    let switch = gtk::Switch::new();
+    switch.set_valign(gtk::Align::Center);
+    row.pack_end(&switch, false, false, 0);
+    (row, switch)
 }
 
 fn icon_button(icon: &str, tooltip: &str) -> gtk::Button {

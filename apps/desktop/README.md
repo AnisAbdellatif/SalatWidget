@@ -14,6 +14,15 @@ It comes in two forms, sharing the same code:
 The **popup** shows a live countdown card, the day's adhan and iqama times (Jumu'a on Fridays, tomorrow's times
 after Isha), and a page for choosing your mosque by pasting its Mawaqit link.
 
+**Settings** (gear button in the popup, or *Settings…* in the tray menu):
+
+- **Notifications at adhan and/or iqama**, shown by the desktop's notification service (XFCE, GNOME, KDE…). They're
+  sent while SalatWidget runs, right when each time arrives. After a suspend, anything more than five minutes late is
+  skipped rather than sent in a burst. If both the tray app and the panel plugin run, only one of them notifies (a
+  lock in `$XDG_RUNTIME_DIR`), and both follow the same switches.
+- **Start at login** (tray app): adds `~/.config/autostart/salatwidget.desktop`. The panel plugin doesn't need this,
+  since it starts with the panel.
+
 Where the tray label text appears:
 
 | Desktop | Text next to the tray icon |
@@ -55,7 +64,7 @@ cargo build --release
 target/release/salatwidget --mosque https://mawaqit.net/de/your-mosque
 ```
 
-To start it at login, add it in *Session and Startup → Application Autostart*.
+To start it at login, switch on *Start at login* in its settings.
 
 Settings and the cached timetable live in `~/.config/salatwidget/` and `~/.cache/salatwidget/`.
 

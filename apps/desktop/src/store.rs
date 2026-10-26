@@ -1,9 +1,10 @@
-//! Settings and the timetable cache, in the XDG base directories:
-//! `~/.config/salatwidget/settings` and `~/.cache/salatwidget/<mosque>.json`.
+//! Settings, the timetable cache and the login item, in the XDG base directories:
+//! `~/.config/salatwidget/settings`, `~/.cache/salatwidget/<mosque>.json` and
+//! `~/.config/autostart/salatwidget.desktop`.
 
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use jiff::Timestamp;
 use mawakit::{MosqueTimetable, mawaqit};
@@ -12,20 +13,20 @@ const USER_AGENT: &str = concat!("SalatWidget/", env!("CARGO_PKG_VERSION"), " (L
 /// Refetch at least this often: Mawaqit's "today" times may carry manual tweaks.
 pub const REFRESH_INTERVAL_SECONDS: i64 = 6 * 3600;
 
-fn base_dir(variable: &str, fallback: &str) -> Option<PathBuf> {
+/// An XDG base directory, e.g. `$XDG_CONFIG_HOME` or `~/.config`.
+fn xdg_dir(variable: &str, fallback: &str) -> Option<PathBuf> {
     std::env::var_os(variable)
         .map(PathBuf::from)
         .filter(|p| p.is_absolute())
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(fallback)))
-        .map(|dir| dir.join("salatwidget"))
 }
 
 fn config_dir() -> Option<PathBuf> {
-    base_dir("XDG_CONFIG_HOME", ".config")
+    xdg_dir("XDG_CONFIG_HOME", ".config").map(|dir| dir.join("salatwidget"))
 }
 
 fn cache_dir() -> Option<PathBuf> {
-    base_dir("XDG_CACHE_HOME", ".cache")
+    xdg_dir("XDG_CACHE_HOME", ".cache").map(|dir| dir.join("salatwidget"))
 }
 
 /// User preferences, stored as `key=value` lines.
@@ -33,6 +34,10 @@ fn cache_dir() -> Option<PathBuf> {
 pub struct Settings {
     /// The selected mosque's Mawaqit slug, e.g. `assunna-hannover`.
     pub mosque: Option<String>,
+    /// Desktop notification at each adhan.
+    pub notify_adhan: bool,
+    /// Desktop notification at each iqama.
+    pub notify_iqama: bool,
 }
 
 impl Settings {
@@ -52,20 +57,88 @@ impl Settings {
     fn parse(text: &str) -> Self {
         let mut settings = Self::default();
         for line in text.lines() {
-            if let Some((key, value)) = line.split_once('=')
-                && key.trim() == "mosque"
-            {
-                settings.mosque = mawaqit::mosque_slug(value.trim());
+            let Some((key, value)) = line.split_once('=') else {
+                continue;
+            };
+            let value = value.trim();
+            match key.trim() {
+                "mosque" => settings.mosque = mawaqit::mosque_slug(value),
+                "notify-adhan" => settings.notify_adhan = value == "true",
+                "notify-iqama" => settings.notify_iqama = value == "true",
+                _ => {}
             }
         }
         settings
     }
 
     fn serialize(&self) -> String {
-        self.mosque
-            .as_deref()
-            .map(|m| format!("mosque={m}\n"))
-            .unwrap_or_default()
+        let mut text = String::new();
+        if let Some(mosque) = &self.mosque {
+            text.push_str(&format!("mosque={mosque}\n"));
+        }
+        text.push_str(&format!("notify-adhan={}\n", self.notify_adhan));
+        text.push_str(&format!("notify-iqama={}\n", self.notify_iqama));
+        text
+    }
+
+    /// The kinds of events to notify about.
+    pub fn notification_kinds(&self) -> Vec<mawakit::PrayerEventKind> {
+        let mut kinds = Vec::new();
+        if self.notify_adhan {
+            kinds.push(mawakit::PrayerEventKind::Adhan);
+        }
+        if self.notify_iqama {
+            kinds.push(mawakit::PrayerEventKind::Iqama);
+        }
+        kinds
+    }
+}
+
+/// Starting the tray app at login, via an XDG autostart entry. (The XFCE panel plugin
+/// doesn't need this: it starts with the panel.)
+pub mod autostart {
+    use super::*;
+
+    fn path() -> Option<PathBuf> {
+        xdg_dir("XDG_CONFIG_HOME", ".config")
+            .map(|dir| dir.join("autostart").join("salatwidget.desktop"))
+    }
+
+    pub fn is_enabled() -> bool {
+        path()
+            .and_then(|p| fs::read_to_string(p).ok())
+            .is_some_and(|entry| !entry.lines().any(|line| line.trim() == "Hidden=true"))
+    }
+
+    /// Creates the entry for the running executable, or removes it.
+    pub fn set_enabled(enabled: bool) -> io::Result<()> {
+        let path = path().ok_or_else(|| io::Error::other("no home directory"))?;
+        if enabled {
+            let exe = std::env::current_exe()?;
+            if let Some(dir) = path.parent() {
+                fs::create_dir_all(dir)?;
+            }
+            fs::write(&path, entry(&exe))
+        } else {
+            match fs::remove_file(&path) {
+                Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+                other => other,
+            }
+        }
+    }
+
+    /// The desktop entry, with the executable quoted as the Desktop Entry spec requires.
+    pub(crate) fn entry(exe: &Path) -> String {
+        let quoted = exe
+            .to_string_lossy()
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('`', "\\`")
+            .replace('$', "\\$");
+        format!(
+            "[Desktop Entry]\nType=Application\nName=SalatWidget\nComment=Time left until the next prayer\n\
+             Exec=\"{quoted}\"\nIcon=appointment-soon\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
+        )
     }
 }
 
@@ -150,6 +223,8 @@ mod tests {
     fn settings_round_trip() {
         let settings = Settings {
             mosque: Some("assunna-hannover".into()),
+            notify_adhan: true,
+            notify_iqama: false,
         };
         assert_eq!(Settings::parse(&settings.serialize()), settings);
         assert_eq!(Settings::parse(""), Settings::default());
@@ -162,5 +237,27 @@ mod tests {
         );
         assert_eq!(parsed.mosque.as_deref(), Some("assunna-hannover"));
         assert_eq!(Settings::parse("mosque=not a slug").mosque, None);
+    }
+
+    #[test]
+    fn notification_settings() {
+        let parsed = Settings::parse("notify-adhan=true\nnotify-iqama=false\n");
+        assert!(parsed.notify_adhan && !parsed.notify_iqama);
+        assert_eq!(
+            parsed.notification_kinds(),
+            vec![mawakit::PrayerEventKind::Adhan]
+        );
+        // Off unless switched on.
+        assert!(Settings::parse("").notification_kinds().is_empty());
+    }
+
+    #[test]
+    fn autostart_entry_quotes_the_executable() {
+        let entry = autostart::entry(Path::new("/home/me/my apps/salat\"widget$"));
+        assert!(entry.starts_with("[Desktop Entry]\nType=Application\n"));
+        assert!(
+            entry.contains("Exec=\"/home/me/my apps/salat\\\"widget\\$\"\n"),
+            "{entry}"
+        );
     }
 }
