@@ -4,14 +4,25 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-if git diff --cached --quiet -- apps/macos/Sources apps/macos/Tests apps/macos/Package.swift; then
-    exit 0
-fi
 log="${TMPDIR:-/tmp}/salatwidget-pre-commit.log"
-echo "▸ macOS app: running tests and performance budgets…"
-if ! make --no-print-directory test >"$log" 2>&1; then
-    grep -E "✘|error:" "$log" | head -40
-    echo "✘ Tests failed. Full log: $log" >&2
-    exit 1
+
+if ! git diff --cached --quiet -- apps/macos/Sources apps/macos/Tests apps/macos/Package.swift; then
+    echo "▸ macOS app: running tests and performance budgets…"
+    if ! make --no-print-directory test-macos >"$log" 2>&1; then
+        grep -E "✘|error:" "$log" | head -40
+        echo "✘ Tests failed. Full log: $log" >&2
+        exit 1
+    fi
+    grep -E "Test run" "$log" | tail -1
 fi
-grep -E "Test run" "$log" | tail -1
+
+if ! git diff --cached --quiet -- apps/desktop; then
+    # Portable parts only; the Linux GTK code needs a Linux machine (apps/desktop/README.md).
+    echo "▸ Desktop app: formatting and portable tests…"
+    if ! make --no-print-directory test-desktop >"$log" 2>&1; then
+        grep -E "error|FAILED|panicked|Diff in" "$log" | head -40
+        echo "✘ Desktop checks failed. Full log: $log" >&2
+        exit 1
+    fi
+    grep -E "test result" "$log" | head -1
+fi
