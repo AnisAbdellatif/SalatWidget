@@ -11,8 +11,10 @@ zero=0000000000000000000000000000000000000000
 needs_check=0
 while read -r _local_ref local_sha _remote_ref remote_sha; do
     [[ "$local_sha" == "$zero" ]] && continue
-    if [[ "$remote_sha" == "$zero" ]]; then range="$local_sha"; else range="$remote_sha..$local_sha"; fi
-    git diff --quiet "$range" -- apps/macos/Sources apps/macos/Package.swift 2>/dev/null || needs_check=1
+    # A new branch is compared with the empty tree, i.e. everything it contains.
+    base="$remote_sha"
+    [[ "$base" == "$zero" ]] && base="$(git hash-object -t tree /dev/null)"
+    git diff --quiet "$base" "$local_sha" -- apps/macos/Sources apps/macos/Package.swift 2>/dev/null || needs_check=1
 done
 (( needs_check )) || exit 0
 
