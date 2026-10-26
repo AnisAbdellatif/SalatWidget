@@ -1,0 +1,24 @@
+[package]
+name = "salatwidget"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+description = "SalatWidget for Linux (and later Windows): the next prayer and a countdown in the tray."
+
+[dependencies]
+# The shared prayer-time core: the MawaKit checkout next to this repository.
+mawakit = { path = "../../../MawaKit" }
+jiff = "0.2.38"
+tray-icon = "0.26.1"
+ureq = "3.5.0"
+serde_json = "1.0.154"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# tray-icon's Linux backend (AppIndicator) runs on GTK's main loop.
+gtk = "0.18"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
