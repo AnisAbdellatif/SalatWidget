@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Before each commit that touches an app: run its tests, including the
+# deterministic performance budgets. Skip once with `git commit --no-verify`.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+if git diff --cached --quiet -- apps/macos/Sources apps/macos/Tests apps/macos/Package.swift; then
+    exit 0
+fi
+log="${TMPDIR:-/tmp}/salatwidget-pre-commit.log"
+echo "▸ macOS app: running tests and performance budgets…"
+if ! make --no-print-directory test >"$log" 2>&1; then
+    grep -E "✘|error:" "$log" | head -40
+    echo "✘ Tests failed. Full log: $log" >&2
+    exit 1
+fi
+grep -E "Test run" "$log" | tail -1

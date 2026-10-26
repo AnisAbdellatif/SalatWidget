@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Before each push that includes app code: run the runtime performance check
+# (about a minute; it briefly opens the app's panel, so don't click it meanwhile).
+# Skip once with `SKIP_PERF=1 git push` or `git push --no-verify`.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+[[ "${SKIP_PERF:-0}" == "1" ]] && exit 0
+
+zero=0000000000000000000000000000000000000000
+needs_check=0
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+    [[ "$local_sha" == "$zero" ]] && continue
+    if [[ "$remote_sha" == "$zero" ]]; then range="$local_sha"; else range="$remote_sha..$local_sha"; fi
+    git diff --quiet "$range" -- apps/macos/Sources apps/macos/Package.swift 2>/dev/null || needs_check=1
+done
+(( needs_check )) || exit 0
+
+echo "▸ macOS app: running the runtime performance check (≈1 min)…"
+make --no-print-directory perf
