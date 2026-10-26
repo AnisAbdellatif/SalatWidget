@@ -66,6 +66,7 @@ pub struct Snapshot {
     pub fetched_at: Option<Timestamp>,
     pub has_mosque: bool,
     pub slug: Option<String>,
+    pub can_quit: bool,
 }
 
 struct RowWidgets {
@@ -90,6 +91,7 @@ struct Inner {
     detail: gtk::Label,
     rows: Vec<RowWidgets>,
     footer: gtk::Label,
+    quit: gtk::Button,
     placeholder: gtk::Label,
     times_content: gtk::Box,
     picker_entry: gtk::Entry,
@@ -284,6 +286,7 @@ impl Panel {
             detail,
             rows,
             footer,
+            quit: quit.clone(),
             placeholder,
             times_content,
             picker_entry,
@@ -367,23 +370,44 @@ impl Panel {
         panel
     }
 
-    /// Shows the panel near the top-right corner of the screen, above other windows.
-    pub fn present(&self) {
+    /// Shows the panel above other windows: under `anchor` (the indicator's position)
+    /// if known, otherwise near the top-right corner of the screen.
+    pub fn present(&self, anchor: Option<gdk::Rectangle>) {
         let window = &self.0.window;
         window.show_all();
         self.apply_visibility();
-        if let Some(area) = gdk::Display::default()
-            .and_then(|display| display.primary_monitor().or_else(|| display.monitor(0)))
-            .map(|monitor| monitor.workarea())
-        {
-            let (width, _) = window.size();
-            window.move_(area.x() + area.width() - width - 8, area.y() + 8);
+        let display = gdk::Display::default();
+        let monitor = display.as_ref().and_then(|display| match &anchor {
+            Some(a) => display.monitor_at_point(a.x(), a.y()),
+            None => display.primary_monitor().or_else(|| display.monitor(0)),
+        });
+        if let Some(area) = monitor.map(|m| m.workarea()) {
+            let (width, height) = window.size();
+            let (x, y) = match anchor {
+                // Below a top panel, above a bottom one, aligned with the indicator.
+                Some(a) => {
+                    let x = (a.x() + a.width() - width).max(area.x() + 8);
+                    let below = a.y() + a.height() + 4;
+                    let y = if below + height <= area.y() + area.height() {
+                        below
+                    } else {
+                        a.y() - height - 4
+                    };
+                    (x, y)
+                }
+                None => (area.x() + area.width() - width - 8, area.y() + 8),
+            };
+            window.move_(x, y);
         }
         window.present();
     }
 
     pub fn hide(&self) {
         self.0.window.hide();
+    }
+
+    pub fn is_visible(&self) -> bool {
+        self.0.window.is_visible()
     }
 
     pub fn show_times(&self) {
@@ -450,6 +474,8 @@ impl Panel {
         if !snapshot.has_mosque {
             inner.picker_back.set_visible(false);
         }
+        inner.quit.set_visible(snapshot.can_quit);
+        inner.quit.set_no_show_all(!snapshot.can_quit);
         self.apply_visibility();
         self.refresh(Timestamp::now());
     }

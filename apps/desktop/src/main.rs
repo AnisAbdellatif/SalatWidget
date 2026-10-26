@@ -3,13 +3,8 @@
 //!   salatwidget                    start (in the tray)
 //!   salatwidget --mosque <link>    select a mosque by Mawaqit link or slug, then start
 
-mod font;
-mod icon;
-mod store;
-mod view;
-
 #[cfg(target_os = "linux")]
-mod linux;
+use salatwidget::linux;
 
 fn main() {
     let mut args = std::env::args().skip(1);

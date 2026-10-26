@@ -1,6 +1,8 @@
-//! The Linux app: tray icon (AppIndicator) + GTK popup, all on GTK's main loop.
+//! The Linux app logic, shared by the tray app and the XFCE panel plugin: ticking,
+//! loading timetables, choosing a mosque and the GTK popup. What sits in the panel
+//! (a tray icon with a menu, or a text label) is an [`Indicator`].
 
-mod panel;
+pub mod panel;
 mod tray;
 
 use std::cell::RefCell;
@@ -12,10 +14,29 @@ use jiff::Timestamp;
 use mawakit::{MosqueTimetable, countdown, mawaqit};
 
 use crate::store::{Cached, Settings};
-use crate::view;
+use crate::view::{self, Row};
 
 use panel::Panel;
 use tray::Tray;
+
+/// What an indicator shows: the countdown, today's rows and the mosque.
+pub struct IndicatorState<'a> {
+    pub status: Option<&'a mawakit::PrayerStatus>,
+    pub now: Timestamp,
+    pub rows: Option<&'a [Row]>,
+    pub mosque_name: Option<&'a str>,
+    pub needs_mosque: bool,
+}
+
+/// The part of the app that lives in the panel.
+pub trait Indicator {
+    fn show(&mut self, state: IndicatorState<'_>);
+
+    /// Where the indicator is on screen, so the popup can open next to it.
+    fn anchor(&self) -> Option<gtk::gdk::Rectangle> {
+        None
+    }
+}
 
 /// Wake at least this often. GLib timers use the monotonic clock, which stops during
 /// suspend, so a cap keeps the countdown right after waking up (and is nearly free:
@@ -37,8 +58,10 @@ pub struct App {
     timetable: Option<Rc<MosqueTimetable>>,
     load_state: LoadState,
     last_attempt: Option<Timestamp>,
-    tray: Tray,
+    indicator: Box<dyn Indicator>,
     panel: Option<Panel>,
+    /// Whether "Quit" makes sense: true for the tray app, false inside the XFCE panel.
+    can_quit: bool,
     /// Incremented whenever ticks are rescheduled; stale timers check it and stop.
     tick_generation: u64,
 }
@@ -57,40 +80,22 @@ fn with_app(f: impl FnOnce(&Rc<RefCell<App>>)) {
     }
 }
 
+/// The tray app: initialises GTK, shows the tray icon and runs until "Quit".
 pub fn run(
     mosque_argument: Option<String>,
     open_panel: bool,
     close_panel_after: Option<u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     gtk::init()?;
-    panel::install_css();
-
-    let mut settings = Settings::load();
     if let Some(input) = mosque_argument {
         let slug =
             mawaqit::mosque_slug(&input).ok_or("that doesn't look like a Mawaqit mosque link")?;
-        settings.mosque = Some(slug);
-        settings.save()?;
+        Settings { mosque: Some(slug) }.save()?;
     }
-    let cached = settings.mosque.as_deref().and_then(Cached::load);
-    let timetable = cached.as_ref().and_then(Cached::timetable).map(Rc::new);
 
-    let app = Rc::new(RefCell::new(App {
-        settings,
-        cached,
-        timetable,
-        load_state: LoadState::Idle,
-        last_attempt: None,
-        tray: Tray::new()?,
-        panel: None,
-        tick_generation: 0,
-    }));
-    APP.with(|cell| *cell.borrow_mut() = Some(app.clone()));
+    let app = start(Box::new(Tray::new()?), true);
     tray::install_menu_handler();
-
-    reschedule(&app);
-    refresh_if_needed(&app);
-    if open_panel || app.borrow().settings.mosque.is_none() {
+    if open_panel {
         show_panel(&app);
     }
     if let Some(seconds) = close_panel_after {
@@ -104,6 +109,47 @@ pub fn run(
     gtk::main();
     APP.with(|cell| cell.borrow_mut().take());
     Ok(())
+}
+
+/// Starts the app with `indicator` on an already running GTK main loop (the tray app's,
+/// or the XFCE panel's). Opens the popup right away when no mosque is chosen yet.
+pub fn start(indicator: Box<dyn Indicator>, can_quit: bool) -> Rc<RefCell<App>> {
+    panel::install_css();
+    let settings = Settings::load();
+    let cached = settings.mosque.as_deref().and_then(Cached::load);
+    let timetable = cached.as_ref().and_then(Cached::timetable).map(Rc::new);
+
+    let app = Rc::new(RefCell::new(App {
+        settings,
+        cached,
+        timetable,
+        load_state: LoadState::Idle,
+        last_attempt: None,
+        indicator,
+        panel: None,
+        can_quit,
+        tick_generation: 0,
+    }));
+    APP.with(|cell| *cell.borrow_mut() = Some(app.clone()));
+
+    reschedule(&app);
+    refresh_if_needed(&app);
+    if app.borrow().settings.mosque.is_none() {
+        show_panel(&app);
+    }
+    app
+}
+
+/// Opens the popup, or closes it if it's open (for indicators that receive clicks).
+pub fn toggle_panel() {
+    with_app(|app| {
+        let visible = app.borrow().panel.as_ref().is_some_and(Panel::is_visible);
+        if visible {
+            with_panel(app, Panel::hide);
+        } else {
+            show_panel(app);
+        }
+    });
 }
 
 // MARK: Ticking
@@ -124,13 +170,13 @@ fn reschedule(app: &Rc<RefCell<App>>) {
             Some(view::rows(&schedule, status.as_ref(), now, t.time_zone()))
         });
         let needs_mosque = state.settings.mosque.is_none();
-        state.tray.show(
-            status.as_ref(),
+        state.indicator.show(IndicatorState {
+            status: status.as_ref(),
             now,
-            rows.as_deref(),
-            mosque_name.as_deref(),
+            rows: rows.as_deref(),
+            mosque_name: mosque_name.as_deref(),
             needs_mosque,
-        );
+        });
 
         // Sleep until the label, the icon text or the timetable rows would change.
         let mut sleep = MAX_TICK.as_secs_f64();
@@ -264,11 +310,12 @@ fn show_panel(app: &Rc<RefCell<App>>) {
         app.borrow_mut().panel = Some(panel);
     }
     update_panel(app);
+    let anchor = app.borrow().indicator.anchor();
     with_panel(app, |panel| {
         if app.borrow().settings.mosque.is_none() {
             panel.show_picker(false);
         }
-        panel.present();
+        panel.present(anchor);
     });
 }
 
@@ -282,6 +329,7 @@ fn update_panel(app: &Rc<RefCell<App>>) {
             fetched_at: state.cached.as_ref().map(|c| c.fetched_at),
             has_mosque: state.settings.mosque.is_some(),
             slug: state.settings.mosque.clone(),
+            can_quit: state.can_quit,
         }
     };
     with_panel(app, |panel| panel.update(snapshot));

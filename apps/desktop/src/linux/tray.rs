@@ -1,11 +1,10 @@
 //! The tray icon and its menu. On Linux (AppIndicator) clicking the icon opens the menu,
 //! so the menu itself shows the countdown and the day's times.
 
-use jiff::Timestamp;
-use mawakit::PrayerStatus;
 use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
+use super::{Indicator, IndicatorState};
 use crate::icon::{self, Image};
 use crate::view::{self, Row, RowState};
 
@@ -75,16 +74,18 @@ impl Tray {
             shown_rows: Vec::new(),
         })
     }
+}
 
+impl Indicator for Tray {
     /// Shows `status` (or the idle state) in the icon, the label and the menu.
-    pub fn show(
-        &mut self,
-        status: Option<&PrayerStatus>,
-        now: Timestamp,
-        rows: Option<&[Row]>,
-        mosque_name: Option<&str>,
-        needs_mosque: bool,
-    ) {
+    fn show(&mut self, state: IndicatorState<'_>) {
+        let IndicatorState {
+            status,
+            now,
+            rows,
+            mosque_name,
+            needs_mosque,
+        } = state;
         // Icon: countdown badge, or the crescent when there's nothing to count down to.
         let (icon_key, image) = match status {
             Some(status) => {

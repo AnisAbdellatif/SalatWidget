@@ -6,6 +6,19 @@ license = "MIT"
 publish = false
 description = "SalatWidget for Linux (and later Windows): the next prayer and a countdown in the tray."
 
+[workspace]
+# The XFCE panel plugin is its own crate so the tray app never links libxfce4panel
+# (and keeps running on GNOME, KDE and others).
+members = [".", "xfce-plugin"]
+default-members = ["."]
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "salatwidget"
+path = "src/main.rs"
+
 [dependencies]
 # The shared prayer-time core: the MawaKit checkout next to this repository.
 mawakit = { path = "../../../MawaKit" }
