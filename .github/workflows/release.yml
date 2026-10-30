@@ -1,0 +1,87 @@
+name: Release
+
+# Push a tag like v1.1.0 to build the macOS DMG and the Linux packages and publish them as
+# a GitHub release, then update the Homebrew cask. Run it by hand (Actions tab) to build the
+# packages without publishing.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Check the version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          plist="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' apps/macos/Support/Info.plist)"
+          [[ "v$plist" == "$GITHUB_REF_NAME" ]] || { echo "Info.plist says $plist, the tag is $GITHUB_REF_NAME" >&2; exit 1; }
+      - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - run: make -C apps/macos dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: apps/macos/build/SalatWidget-*.dmg
+
+  linux:
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Check the version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          cargo="$(sed -n 's/^version = "\(.*\)"/\1/p' apps/desktop/Cargo.toml | head -1)"
+          [[ "v$cargo" == "$GITHUB_REF_NAME" ]] || { echo "Cargo.toml says $cargo, the tag is $GITHUB_REF_NAME" >&2; exit 1; }
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libgtk-3-dev libayatana-appindicator3-dev libxdo-dev \
+            libxkbcommon-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libxfce4panel-2.0-dev libxfce4ui-2-dev dpkg-dev
+      - run: apps/desktop/scripts/build-deb.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.runner }}
+          path: apps/desktop/target/deb/*.deb
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          sha256sum * >SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "SalatWidget ${GITHUB_REF_NAME#v}" \
+            --generate-notes * || gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber *
+      - name: Update the Homebrew cask
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+        run: |
+          if [[ -z "$TAP_TOKEN" ]]; then echo "No TAP_TOKEN secret: update Casks/salatwidget.rb by hand."; exit 0; fi
+          version="${GITHUB_REF_NAME#v}"
+          sha="$(sha256sum dist/SalatWidget-*.dmg | cut -d' ' -f1)"
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/AnisAbdellatif/homebrew-tap.git" tap
+          cd tap
+          sed -i -e "s/^  version \".*\"/  version \"$version\"/" -e "s/^  sha256 \".*\"/  sha256 \"$sha\"/" Casks/salatwidget.rb
+          git -c user.name="github-actions" -c user.email="actions@github.com" commit -am "salatwidget $version"
+          git push
