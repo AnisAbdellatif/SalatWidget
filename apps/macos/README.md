@@ -31,6 +31,7 @@ need Rust (`rustup`). Every `make` target rebuilds MawaKit's Swift artifacts fir
 
 ```bash
 make run        # build build/SalatWidget.app (universal) and open it
+make run DEV=1 # a separate "SalatWidget Dev" app (own settings and login item), next to the brew one
 make dmg        # build/SalatWidget-<version>.dmg and its SHA-256, for a release
 make install    # copy it to /Applications and open it (needed for "Open at login")
 make test       # unit tests, including performance budgets

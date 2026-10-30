@@ -43,7 +43,7 @@ dmg: app
 	scripts/make-dmg.sh
 
 run: app
-	open build/SalatWidget.app
+	open "build/SalatWidget$(if $(DEV), Dev).app"
 
 install: app
 	rm -rf /Applications/SalatWidget.app

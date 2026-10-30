@@ -4,13 +4,15 @@
 #   scripts/build-app.sh            # release build
 #   CONFIG=debug scripts/build-app.sh
 #   ARCHS="arm64" scripts/build-app.sh   # one architecture only (faster)
+#   DEV=1 scripts/build-app.sh      # "SalatWidget Dev.app": its own bundle ID, so its settings,
+#                                   # Keychain token and login item stay apart from the installed app
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 fallback_sdk="$(scripts/toolchain.sh)"
 [[ -n "$fallback_sdk" ]] && export SDKROOT="$fallback_sdk"
 CONFIG="${CONFIG:-release}"
-APP="build/SalatWidget.app"
+if [[ -n "${DEV:-}" ]]; then APP="build/SalatWidget Dev.app"; else APP="build/SalatWidget.app"; fi
 
 read -r -a ARCHS <<<"${ARCHS:-arm64 x86_64}"
 
@@ -26,6 +28,11 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 lipo -create "${binaries[@]}" -output "$APP/Contents/MacOS/SalatWidget"
 cp Support/Info.plist "$APP/Contents/Info.plist"
+if [[ -n "${DEV:-}" ]]; then
+    plist="$APP/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.anisabdellatif.SalatWidget.dev" \
+        -c "Set :CFBundleName SalatWidget Dev" -c "Set :CFBundleDisplayName SalatWidget Dev" "$plist"
+fi
 [[ -f Support/AppIcon.icns ]] && cp Support/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 # Ad-hoc signature so Gatekeeper, the Keychain and login items accept the bundle
