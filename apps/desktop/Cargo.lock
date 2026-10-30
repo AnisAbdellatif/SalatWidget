@@ -1036,7 +1036,7 @@ dependencies = [
 
 [[package]]
 name = "salatwidget"
-version = "0.1.0"
+version = "1.1.0"
 dependencies = [
  "gtk",
  "jiff",
@@ -1048,7 +1048,7 @@ dependencies = [
 
 [[package]]
 name = "salatwidget-xfce"
-version = "0.1.0"
+version = "1.1.0"
 dependencies = [
  "cc",
  "gtk",

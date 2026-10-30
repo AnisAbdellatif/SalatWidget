@@ -96,7 +96,10 @@ swift run SalatWidget --perf-report /tmp/perf.json    # what `make perf` runs
 Prayer times are provided by MAWAQIT. This project isn't affiliated with MAWAQIT.
 
 ## Releasing
-1. Bump `CFBundleShortVersionString` (and `CFBundleVersion`) in `Support/Info.plist`.
-2. `make dmg`, then upload `build/SalatWidget-<version>.dmg` to a GitHub release tagged `v<version>`.
-3. Set `version` and `sha256` in `Casks/salatwidget.rb` of [AnisAbdellatif/homebrew-tap](https://github.com/AnisAbdellatif/homebrew-tap).
-   Hash the uploaded file: a rebuilt DMG has a different hash.
+Releases are built by GitHub Actions (`.github/workflows/release.yml`): the DMG here and the Linux packages.
+1. `scripts/bump-version.sh <version>` (repo root) sets the version for the app and the Linux crates. Commit it.
+2. `git tag v<version> && git push origin v<version>`. The workflow builds everything and publishes the release.
+3. It also updates `Casks/salatwidget.rb` in [AnisAbdellatif/homebrew-tap](https://github.com/AnisAbdellatif/homebrew-tap)
+   when the `TAP_TOKEN` secret is set; otherwise set `version` and `sha256` there by hand, from the release's `SHA256SUMS`.
+
+`make dmg` builds the same DMG locally, for trying it out.
