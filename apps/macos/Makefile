@@ -1,4 +1,4 @@
-.PHONY: build test perf app run install icon clean mawakit
+.PHONY: build test perf app dmg run install icon clean mawakit
 
 # With only the Command Line Tools installed (no Xcode), SwiftPM doesn't find
 # swift-testing on its own; point it at the copy that ships with them.
@@ -38,6 +38,9 @@ perf: mawakit
 
 app: mawakit
 	scripts/build-app.sh
+
+dmg: app
+	scripts/make-dmg.sh
 
 run: app
 	open build/SalatWidget.app

@@ -13,14 +13,24 @@ the timetables mosques publish on [mawaqit.net](https://mawaqit.net).
 
 Requires macOS 14 or later. The build is universal (Apple silicon + Intel).
 
+## Install
+```sh
+brew install --cask AnisAbdellatif/tap/salatwidget
+```
+Or download `SalatWidget-<version>.dmg` from the [releases](https://github.com/AnisAbdellatif/SalatWidget/releases)
+and drag the app to Applications. The app is ad-hoc signed, not notarized, so the cask clears the quarantine flag for
+you. After a manual download, right-click the app and choose Open the first time.
+
 ## Build and run
 
-The prayer-time logic comes from [MawaKit](../../../MawaKit), the shared Rust core. Until it's published, check it
-out next to this repository (`~/dev/MawaKit` beside `~/dev/SalatWidget`), or point `MAWAKIT_PATH` at it. You also
+The prayer-time logic comes from [MawaKit](../../MawaKit), the shared Rust core. It's a git submodule at the
+repository root (`git clone --recurse-submodules`, or `git submodule update --init`), or point `MAWAKIT_PATH` at
+another checkout. You also
 need Rust (`rustup`). Every `make` target rebuilds MawaKit's Swift artifacts first.
 
 ```bash
 make run        # build build/SalatWidget.app (universal) and open it
+make dmg        # build/SalatWidget-<version>.dmg and its SHA-256, for a release
 make install    # copy it to /Applications and open it (needed for "Open at login")
 make test       # unit tests, including performance budgets
 make perf       # runtime performance check (≈1 min)
@@ -83,3 +93,9 @@ swift run SalatWidget --perf-report /tmp/perf.json    # what `make perf` runs
 (`SIGN_IDENTITY="Developer ID Application: …" make app`) and notarize it with `xcrun notarytool`.
 
 Prayer times are provided by MAWAQIT. This project isn't affiliated with MAWAQIT.
+
+## Releasing
+1. Bump `CFBundleShortVersionString` (and `CFBundleVersion`) in `Support/Info.plist`.
+2. `make dmg`, then upload `build/SalatWidget-<version>.dmg` to a GitHub release tagged `v<version>`.
+3. Set `version` and `sha256` in `Casks/salatwidget.rb` of [AnisAbdellatif/homebrew-tap](https://github.com/AnisAbdellatif/homebrew-tap).
+   Hash the uploaded file: a rebuilt DMG has a different hash.
