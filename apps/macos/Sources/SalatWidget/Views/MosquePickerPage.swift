@@ -159,17 +159,17 @@ private struct SearchSection: View {
         } else if !results.isEmpty {
             ScrollView {
                 LazyVStack(spacing: 2) {
-                    ForEach(results) { result in
+                    ForEach(results, id: \.slug) { result in
                         ResultRow(
                             result: result,
-                            isSelected: result.slug != nil && result.slug == model.selectedSlug,
-                            isLoading: selectingID == result.id,
+                            isSelected: result.slug == model.selectedSlug,
+                            isLoading: selectingID == result.slug,
                             action: { select(result) }
                         )
                     }
                 }
             }
-            .frame(maxHeight: 210)
+            .frame(height: min(CGFloat(results.count) * 40, 280))
         } else if query.trimmingCharacters(in: .whitespaces).count >= 2 && !isSearching {
             Text("No mosques found.")
                 .font(.caption)
@@ -206,8 +206,9 @@ private struct SearchSection: View {
     }
 
     private func select(_ result: MosqueSearchResult) {
-        guard let slug = result.slug, selectingID == nil else { return }
-        selectingID = result.id
+        guard selectingID == nil else { return }
+        let slug = result.slug
+        selectingID = slug
         Task {
             defer { selectingID = nil }
             do {
@@ -235,10 +236,10 @@ private struct ResultRow: View {
                     .foregroundStyle(Color.brand)
                     .frame(width: 18)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(result.displayName)
+                    Text(result.label)
                         .lineLimit(1)
-                    if let place = result.localisation, !place.isEmpty {
-                        Text(place)
+                    if !result.place.isEmpty {
+                        Text(result.place)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -260,8 +261,7 @@ private struct ResultRow: View {
             )
         }
         .buttonStyle(.plain)
-        .disabled(result.slug == nil)
-        .help(result.slug == nil ? "This place has no public Mawaqit page" : result.displayName)
+        .help(result.label)
         .onHover { isHovering = $0 }
     }
 }

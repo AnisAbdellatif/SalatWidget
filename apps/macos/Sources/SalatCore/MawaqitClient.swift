@@ -1,4 +1,5 @@
 import Foundation
+import MawaKit
 
 /// Abstraction over `URLSession` so the client can be tested without the network.
 public protocol HTTPDataLoading: Sendable {
@@ -37,34 +38,6 @@ public enum MawaqitError: LocalizedError, Equatable {
         case let .server(code):
             "Mawaqit responded with an error (\(code))."
         }
-    }
-}
-
-/// A mosque returned by the Mawaqit search API.
-public struct MosqueSearchResult: Decodable, Identifiable, Sendable, Hashable {
-    public let uuid: String
-    public let name: String
-    public let label: String?
-    /// The identifier in the mosque's page URL. Missing for some unlisted places.
-    public let slug: String?
-    public let localisation: String?
-    /// Distance in metres, only for searches around a position.
-    public let proximity: Int?
-
-    public var id: String { uuid }
-
-    public var displayName: String {
-        let trimmed = (label ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? name : trimmed
-    }
-
-    public init(uuid: String, name: String, label: String? = nil, slug: String?, localisation: String? = nil, proximity: Int? = nil) {
-        self.uuid = uuid
-        self.name = name
-        self.label = label
-        self.slug = slug
-        self.localisation = localisation
-        self.proximity = proximity
     }
 }
 
@@ -133,17 +106,16 @@ public struct MawaqitClient: Sendable {
         let word = String(query.trimmingCharacters(in: .whitespacesAndNewlines).prefix(30))
         guard word.count >= 2 else { return [] }
 
-        var components = URLComponents(url: Self.baseURL.appending(path: "api/2.0/mosque/search"), resolvingAgainstBaseURL: false)!
-        components.queryItems = [
-            URLQueryItem(name: "word", value: word),
-            URLQueryItem(name: "itemsPerPage", value: String(min(max(limit, 1), 50))),
-        ]
-        var request = URLRequest(url: components.url!)
-        request.setValue(token, forHTTPHeaderField: "Api-Access-Token")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let search = mosqueSearchByNameRequest(word: word, token: token)
+        var request = URLRequest(url: URL(string: search.url)!)
+        for header in search.headers { request.setValue(header.value, forHTTPHeaderField: header.name) }
 
         let data = try await send(request)
-        return try JSONDecoder().decode([MosqueSearchResult].self, from: data)
+        do {
+            return try parseMosqueSearchResults(body: String(decoding: data, as: UTF8.self))
+        } catch {
+            throw MawaqitError.unreadablePage
+        }
     }
 
     // MARK: - Transport

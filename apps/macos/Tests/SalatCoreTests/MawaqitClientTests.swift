@@ -55,15 +55,15 @@ struct MawaqitClientTests {
         let body = #"""
         [{"uuid":"8b5e72c0","name":"Assunna","label":"Masjid Assunna - Hannover","slug":"assunna-hannover",
           "localisation":"Hannover, Germany","type":"MOSQUE","latitude":52.3,"longitude":9.7},
-         {"uuid":"aa","name":"Home","label":null,"slug":null,"localisation":null}]
+         {"uuid":"aa","name":"Home","label":null,"slug":"home","localisation":null}]
         """#
         let loader = MockLoader { _ in (200, Data(body.utf8)) }
         let results = try await MawaqitClient(loader: loader).searchMosques("  hannover ", token: "tok")
 
         #expect(results.count == 2)
-        #expect(results[0].displayName == "Masjid Assunna - Hannover")
+        #expect(results[0].label == "Masjid Assunna - Hannover")
         #expect(results[0].slug == "assunna-hannover")
-        #expect(results[1].displayName == "Home")
+        #expect(results[1].label == "Home")
 
         let request = try #require(loader.requests.first)
         #expect(request.value(forHTTPHeaderField: "Api-Access-Token") == "tok")

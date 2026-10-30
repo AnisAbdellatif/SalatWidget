@@ -142,6 +142,27 @@ pub mod autostart {
     }
 }
 
+/// Searches mosques by name or place (blocking). Needs a Mawaqit API access token.
+pub fn search_mosques(word: &str, token: &str) -> Result<Vec<mawaqit::MosqueSearchResult>, String> {
+    let request = mawaqit::MosqueSearchRequest::by_name(word, token);
+    let mut get = ureq::get(&request.url).header("User-Agent", USER_AGENT);
+    for header in &request.headers {
+        get = get.header(&header.name, &header.value);
+    }
+    let body = get
+        .call()
+        .map_err(|e| match e {
+            ureq::Error::StatusCode(401 | 403) => "Mawaqit rejected the API token.".to_owned(),
+            ureq::Error::StatusCode(429) => "Too many requests. Please try again later.".to_owned(),
+            ureq::Error::StatusCode(code) => format!("Mawaqit responded with an error ({code})."),
+            other => format!("Couldn't reach mawaqit.net: {other}"),
+        })?
+        .body_mut()
+        .read_to_string()
+        .map_err(|e| e.to_string())?;
+    mawaqit::parse_search_results(&body).map_err(|e| e.to_string())
+}
+
 /// A downloaded timetable: the mosque's raw configuration and when it was fetched.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cached {
