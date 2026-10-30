@@ -15,7 +15,8 @@ Requires macOS 14 or later. The build is universal (Apple silicon + Intel).
 
 ## Install
 ```sh
-brew install --cask AnisAbdellatif/tap/salatwidget
+brew tap AnisAbdellatif/tap
+brew install --cask salatwidget
 ```
 Or download `SalatWidget-<version>.dmg` from the [releases](https://github.com/AnisAbdellatif/SalatWidget/releases)
 and drag the app to Applications. The app is ad-hoc signed, not notarized, so the cask clears the quarantine flag for
