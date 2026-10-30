@@ -244,7 +244,7 @@ mod tests {
     use super::*;
     use mawakit::mawaqit;
 
-    const FIXTURE: &str = include_str!("../../../../MawaKit/spec/fixtures/assunna-hannover.html");
+    const FIXTURE: &str = include_str!("../../../MawaKit/spec/fixtures/assunna-hannover.html");
 
     fn ts(s: &str) -> Timestamp {
         s.parse().unwrap_or_else(|e| unreachable!("{e}"))

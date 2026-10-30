@@ -8,8 +8,8 @@ Prayer-time widgets for the desktop: the next prayer and a countdown in the menu
 | Linux: XFCE panel plugin and tray app | [`apps/desktop`](apps/desktop) | Working (Rust, GTK 3) |
 | Windows tray | `apps/desktop` | Planned, sharing the Linux app's code |
 
-All apps use [MawaKit](../MawaKit), the shared prayer-time core written in Rust. It lives in its own repository so
-other apps can use it too. MawaKit owns the behaviour, verified by its shared spec. The apps here own everything
+All apps use [MawaKit](MawaKit), the shared prayer-time core written in Rust, included as a git submodule. It lives in its
+own repository so other apps can use it too. MawaKit owns the behaviour, verified by its shared spec. The apps here own everything
 platform-specific: UI, networking, storage, notifications, and launching at login.
 
 ```bash
@@ -19,8 +19,8 @@ make hooks      # run tests before commits and the perf check before pushes
 make run        # build and open the macOS app
 ```
 
-Local setup: check out `MawaKit` next to this repository (`~/dev/MawaKit` and `~/dev/SalatWidget`) and install Rust
-with `rustup`.
+Local setup: clone with `--recurse-submodules` (or run `git submodule update --init`) and install Rust with
+`rustup`.
 
 ## License
 

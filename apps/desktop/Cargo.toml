@@ -20,8 +20,8 @@ name = "salatwidget"
 path = "src/main.rs"
 
 [dependencies]
-# The shared prayer-time core: the MawaKit checkout next to this repository.
-mawakit = { path = "../../../MawaKit" }
+# The shared prayer-time core: the MawaKit git submodule at the repo root.
+mawakit = { path = "../../MawaKit" }
 jiff = "0.2.38"
 tray-icon = "0.26.1"
 ureq = "3.5.0"

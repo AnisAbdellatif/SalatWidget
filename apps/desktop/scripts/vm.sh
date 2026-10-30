@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Develop and test the Linux app on a VM over SSH (e.g. Xubuntu in UTM).
 #
-#   scripts/vm.sh sync        copy MawaKit and SalatWidget to the VM (no build outputs)
+#   scripts/vm.sh sync        copy SalatWidget (with its MawaKit submodule) to the VM (no build outputs)
 #   scripts/vm.sh build       sync, then cargo build on the VM
 #   scripts/vm.sh run         sync, build, and (re)start the app in the VM's desktop session
 #   scripts/vm.sh stop        stop the app
@@ -21,7 +21,6 @@ set -euo pipefail
 VM="${SALATWIDGET_VM:-xubuntu@192.168.64.2}"
 HERE="$(cd "$(dirname "$0")/.." && pwd)"           # apps/desktop
 MONOREPO="$(cd "$HERE/../.." && pwd)"              # SalatWidget
-MAWAKIT="${MAWAKIT_PATH:-$MONOREPO/../MawaKit}"
 REMOTE_DIR='~/dev'
 SSH=(ssh -o BatchMode=yes -o ConnectTimeout=8 "$VM")
 
@@ -33,7 +32,6 @@ remote() {
 sync() {
     local excludes=(--exclude target/ --exclude .build/ --exclude build/ --exclude .git/ --exclude '*.xcframework' --exclude .DS_Store)
     "${SSH[@]}" "mkdir -p $REMOTE_DIR"
-    rsync -az --delete "${excludes[@]}" "$MAWAKIT/" "$VM:$REMOTE_DIR/MawaKit/"
     rsync -az --delete "${excludes[@]}" "$MONOREPO/" "$VM:$REMOTE_DIR/SalatWidget/"
 }
 

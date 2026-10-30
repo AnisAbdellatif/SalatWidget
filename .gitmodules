@@ -1,0 +1,3 @@
+[submodule "MawaKit"]
+	path = MawaKit
+	url = git@github.com:AnisAbdellatif/MawaKit.git

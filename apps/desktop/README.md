@@ -1,7 +1,7 @@
 # SalatWidget for Linux
 
 The next prayer and a countdown in your panel, for your mosque, using the timetables mosques publish on
-[mawaqit.net](https://mawaqit.net). Built in Rust on [MawaKit](../../../MawaKit), the shared prayer-time core.
+[mawaqit.net](https://mawaqit.net). Built in Rust on [MawaKit](../../MawaKit), the shared prayer-time core.
 
 It comes in two forms, sharing the same code:
 
@@ -40,7 +40,7 @@ sudo apt-get install build-essential pkg-config libgtk-3-dev libayatana-appindic
     libxfce4panel-2.0-dev libxfce4ui-2-dev      # the last two only for the XFCE plugin
 ```
 
-MawaKit must be checked out next to this repository (`~/dev/MawaKit` beside `~/dev/SalatWidget`).
+MawaKit is a git submodule at the repository root; run `git submodule update --init` after cloning.
 
 ## Install
 
@@ -62,6 +62,9 @@ Then add it through *Panel → Add New Items → SalatWidget*. The panel looks f
 ```bash
 cargo build --release
 target/release/salatwidget --mosque https://mawaqit.net/de/your-mosque
+
+# find a mosque by name (needs a Mawaqit API access token), then pass its slug to --mosque
+MAWAQIT_API_TOKEN=... target/release/salatwidget --search hannover
 ```
 
 To start it at login, switch on *Start at login* in its settings.

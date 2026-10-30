@@ -19,7 +19,7 @@ endif
 
 # The Rust core's Swift artifacts (static library + generated API), rebuilt when the
 # MawaKit checkout changes. Cargo makes this fast when nothing changed.
-MAWAKIT_PATH ?= ../../../MawaKit
+MAWAKIT_PATH ?= ../../MawaKit
 export MAWAKIT_PATH
 
 mawakit:

@@ -2,7 +2,7 @@
 import Foundation
 import PackageDescription
 
-let mawaKitPath = ProcessInfo.processInfo.environment["MAWAKIT_PATH"] ?? "../../../MawaKit"
+let mawaKitPath = ProcessInfo.processInfo.environment["MAWAKIT_PATH"] ?? "../../MawaKit"
 
 let package = Package(
     name: "SalatWidget",
@@ -12,8 +12,8 @@ let package = Package(
         .library(name: "SalatCore", targets: ["SalatCore"]),
     ],
     dependencies: [
-        // The shared prayer-time core. Until it's published, it is the MawaKit checkout
-        // next to this repo; set MAWAKIT_PATH to use another one.
+        // The shared prayer-time core. Until it's published, it is the MawaKit git
+        // submodule at the repo root; set MAWAKIT_PATH to use another checkout.
         .package(path: mawaKitPath),
     ],
     targets: [
