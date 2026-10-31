@@ -120,7 +120,7 @@ final class AppModel {
         self.cache = cache
         self.tokenStore = tokenStore
         self.defaults = defaults
-        self.isSignedIn = tokenStore.token() != nil
+        self.isSignedIn = tokenStore.hasToken()
         self.menuBarStyle = defaults.string(forKey: Keys.menuBarStyle).flatMap(MenuBarStyle.init) ?? .nameAndCountdown
         self.launchAtLogin = LaunchAtLogin.isEnabled
         self.notifyAtAdhan = defaults.bool(forKey: Keys.notifyAtAdhan)

@@ -18,6 +18,14 @@ struct KeychainTokenStore: Sendable {
         ]
     }
 
+    /// Whether a token is stored. Reads only the item's attributes, never the secret, so macOS
+    /// doesn't ask for the login password; that happens when `token()` is called.
+    func hasToken() -> Bool {
+        var query = baseQuery
+        query[kSecReturnAttributes as String] = true
+        return SecItemCopyMatching(query as CFDictionary, nil) == errSecSuccess
+    }
+
     func token() -> String? {
         var query = baseQuery
         query[kSecReturnData as String] = true
